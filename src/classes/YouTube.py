@@ -28,8 +28,7 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 from webdriver_manager.firefox import GeckoDriverManager
 from datetime import datetime
 
-# Set ImageMagick Path
-change_settings({"IMAGEMAGICK_BINARY": get_imagemagick_path()})
+# ImageMagick is configured only when rendering subtitles, not at import time.
 
 
 class YouTube:
@@ -54,50 +53,47 @@ class YouTube:
         fp_profile_path: str,
         niche: str,
         language: str,
+        *,
+        background_music: bool = True,
     ) -> None:
-        """
-        Constructor for YouTube Class.
-
-        Args:
-            account_uuid (str): The unique identifier for the YouTube account.
-            account_nickname (str): The nickname for the YouTube account.
-            fp_profile_path (str): Path to the firefox profile that is logged into the specificed YouTube Account.
-            niche (str): The niche of the provided YouTube Channel.
-            language (str): The language of the Automation.
-
-        Returns:
-            None
-        """
-        self._account_uuid: str = account_uuid
-        self._account_nickname: str = account_nickname
-        self._fp_profile_path: str = fp_profile_path
-        self._niche: str = niche
-        self._language: str = language
-
+        """Initialize account state without starting Firefox or downloading models."""
+        self._account_uuid = account_uuid
+        self._account_nickname = account_nickname
+        self._fp_profile_path = fp_profile_path
+        self._niche = niche
+        self._language = language
+        self.background_music = background_music
         self.images = []
+        self.browser = None
+        self.options = None
+        self.service = None
 
-        # Initialize the Firefox profile
-        self.options: Options = Options()
-
-        # Set headless state of browser
-        if get_headless():
-            self.options.add_argument("--headless")
-
+    def _ensure_browser(self):
+        """Start Firefox only for an explicit upload/channel operation."""
+        if self.browser is not None:
+            return self.browser
         if not os.path.isdir(self._fp_profile_path):
             raise ValueError(
-                f"Firefox profile path does not exist or is not a directory: {self._fp_profile_path}"
+                "A valid, authenticated Firefox profile is required for uploading, "
+                "but not for local preview generation."
             )
-
+        self.options = Options()
+        if get_headless():
+            self.options.add_argument("--headless")
         self.options.add_argument("-profile")
         self.options.add_argument(self._fp_profile_path)
+        self.service = Service(GeckoDriverManager().install())
+        self.browser = webdriver.Firefox(service=self.service, options=self.options)
+        return self.browser
 
-        # Set the service
-        self.service: Service = Service(GeckoDriverManager().install())
-
-        # Initialize the browser
-        self.browser: webdriver.Firefox = webdriver.Firefox(
-            service=self.service, options=self.options
-        )
+    def close_browser(self) -> None:
+        """Release the browser if one was opened, including failed uploads."""
+        browser, self.browser = self.browser, None
+        if browser is not None:
+            try:
+                browser.quit()
+            except Exception:
+                warning("Firefox could not be closed cleanly.")
 
     @property
     def niche(self) -> str:
@@ -222,77 +218,38 @@ class YouTube:
         return self.metadata
 
     def generate_prompts(self) -> List[str]:
-        """
-        Generates AI Image Prompts based on the provided Video Script.
-
-        Returns:
-            image_prompts (List[str]): Generated List of image prompts.
-        """
-        n_prompts = len(self.script) / 3
-
-        prompt = f"""
-        Generate {n_prompts} Image Prompts for AI Image Generation,
-        depending on the subject of a video.
-        Subject: {self.subject}
-
-        The image prompts are to be returned as
-        a JSON-Array of strings.
-
-        Each search term should consist of a full sentence,
-        always add the main subject of the video.
-
-        Be emotional and use interesting adjectives to make the
-        Image Prompt as detailed as possible.
-
-        YOU MUST ONLY RETURN THE JSON-ARRAY OF STRINGS.
-        YOU MUST NOT RETURN ANYTHING ELSE.
-        YOU MUST NOT RETURN THE SCRIPT.
-
-        The search terms must be related to the subject of the video.
-        Here is an example of a JSON-Array of strings:
-        ["image prompt 1", "image prompt 2", "image prompt 3"]
-
-        For context, here is the full text:
-        {self.script}
-        """
-
-        completion = (
-            str(self.generate_response(prompt))
-            .replace("```json", "")
-            .replace("```", "")
+        """Generate a bounded number of validated prompts, not one per few letters."""
+        n_prompts = min(8, max(1, int(get_script_sentence_length())))
+        prompt = (
+            f"Generate exactly {n_prompts} image prompts for this video. "
+            "Return only a JSON array of nonempty strings. Each prompt must "
+            "describe one scene, include the main subject, and suit a vertical video. "
+            f"Subject: {self.subject}\nScript: {self.script}"
         )
-
-        image_prompts = []
-
-        if "image_prompts" in completion:
-            image_prompts = json.loads(completion)["image_prompts"]
-        else:
+        for _ in range(3):
+            completion = str(self.generate_response(prompt)).strip()
+            completion = completion.replace("```json", "").replace("```", "").strip()
             try:
-                image_prompts = json.loads(completion)
-                if get_verbose():
-                    info(f" => Generated Image Prompts: {image_prompts}")
-            except Exception:
-                if get_verbose():
-                    warning(
-                        "LLM returned an unformatted response. Attempting to clean..."
-                    )
-
-                # Get everything between [ and ], and turn it into a list
-                r = re.compile(r"\[.*\]")
-                image_prompts = r.findall(completion)
-                if len(image_prompts) == 0:
-                    if get_verbose():
-                        warning("Failed to generate Image Prompts. Retrying...")
-                    return self.generate_prompts()
-
-        if len(image_prompts) > n_prompts:
-            image_prompts = image_prompts[: int(n_prompts)]
-
-        self.image_prompts = image_prompts
-
-        success(f"Generated {len(image_prompts)} Image Prompts.")
-
-        return image_prompts
+                try:
+                    parsed = json.loads(completion)
+                except json.JSONDecodeError:
+                    start, end = completion.find("["), completion.rfind("]")
+                    if start < 0 or end < start:
+                        continue
+                    parsed = json.loads(completion[start:end + 1])
+                if isinstance(parsed, dict):
+                    parsed = parsed.get("image_prompts")
+                if not isinstance(parsed, list):
+                    continue
+                prompts = [item.strip() for item in parsed if isinstance(item, str) and item.strip()]
+                if not prompts:
+                    continue
+                self.image_prompts = prompts[:n_prompts]
+                success(f"Generated {len(self.image_prompts)} Image Prompts.")
+                return self.image_prompts
+            except (ValueError, TypeError):
+                continue
+        raise RuntimeError("The language model did not return usable image prompts after 3 attempts.")
 
     def _persist_image(self, image_bytes: bytes, provider_label: str) -> str:
         """
@@ -550,101 +507,77 @@ class YouTube:
         return srt_path
 
     def combine(self) -> str:
-        """
-        Combines everything into the final video.
+        """Render a retained local MP4; background music is optional for previews."""
+        import numpy as np
+        from PIL import Image, ImageOps
 
-        Returns:
-            path (str): The path to the generated MP4 File.
-        """
-        combined_image_path = os.path.join(ROOT_DIR, ".mp", str(uuid4()) + ".mp4")
-        threads = get_threads()
-        tts_clip = AudioFileClip(self.tts_path)
-        max_duration = tts_clip.duration
-        req_dur = max_duration / len(self.images)
+        if not self.images:
+            raise RuntimeError("No images were generated. Check the image provider before rendering.")
+        output_dir = os.path.join(ROOT_DIR, "outputs")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, str(uuid4()) + ".mp4")
+        resources = []
 
-        # Make a generator that returns a TextClip when called with consecutive
-        generator = lambda txt: TextClip(
-            txt,
-            font=os.path.join(get_fonts_dir(), get_font()),
-            fontsize=100,
-            color="#FFFF00",
-            stroke_color="black",
-            stroke_width=5,
-            size=(1080, 1920),
-            method="caption",
-        )
+        def keep(clip):
+            resources.append(clip)
+            return clip
 
-        print(colored("[+] Combining images...", "blue"))
-
-        clips = []
-        tot_dur = 0
-        # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
-        while tot_dur < max_duration:
-            for image_path in self.images:
-                clip = ImageClip(image_path)
-                clip.duration = req_dur
-                clip = clip.set_fps(30)
-
-                # Not all images are same size,
-                # so we need to resize them
-                if round((clip.w / clip.h), 4) < 0.5625:
-                    if get_verbose():
-                        info(f" => Resizing Image: {image_path} to 1080x1920")
-                    clip = crop(
-                        clip,
-                        width=clip.w,
-                        height=round(clip.w / 0.5625),
-                        x_center=clip.w / 2,
-                        y_center=clip.h / 2,
-                    )
-                else:
-                    if get_verbose():
-                        info(f" => Resizing Image: {image_path} to 1920x1080")
-                    clip = crop(
-                        clip,
-                        width=round(0.5625 * clip.h),
-                        height=clip.h,
-                        x_center=clip.w / 2,
-                        y_center=clip.h / 2,
-                    )
-                clip = clip.resize((1080, 1920))
-
-                # FX (Fade In)
-                # clip = clip.fadein(2)
-
-                clips.append(clip)
-                tot_dur += clip.duration
-
-        final_clip = concatenate_videoclips(clips)
-        final_clip = final_clip.set_fps(30)
-        random_song = choose_random_song()
-
-        subtitles = None
         try:
-            subtitles_path = self.generate_subtitles(self.tts_path)
-            equalize_subtitles(subtitles_path, 10)
-            subtitles = SubtitlesClip(subtitles_path, generator)
-            subtitles.set_pos(("center", "center"))
-        except Exception as e:
-            warning(f"Failed to generate subtitles, continuing without subtitles: {e}")
+            tts_clip = keep(AudioFileClip(self.tts_path))
+            duration = tts_clip.duration
+            if not duration or duration <= 0:
+                raise RuntimeError("The generated voiceover is empty.")
+            scene_duration = duration / len(self.images)
+            clips = []
+            for image_path in self.images:
+                with Image.open(image_path) as image:
+                    # Avoid MoviePy 1's removed Pillow Image.ANTIALIAS API.
+                    frame = np.array(ImageOps.fit(
+                        image.convert("RGB"), (1080, 1920),
+                        method=Image.Resampling.LANCZOS,
+                    ))
+                clips.append(keep(ImageClip(frame).set_duration(scene_duration).set_fps(30)))
+            final_clip = keep(concatenate_videoclips(clips, method="chain"))
+            audio = tts_clip.set_fps(44100)
+            if self.background_music:
+                song = keep(AudioFileClip(choose_random_song()))
+                if not song.duration or song.duration <= 0:
+                    raise RuntimeError("The background audio file is empty.")
+                music = keep(afx.audio_loop(song, duration=duration).volumex(0.1))
+                audio = keep(CompositeAudioClip([audio, music]))
+            final_clip = keep(final_clip.set_audio(audio).set_duration(duration))
 
-        random_song_clip = AudioFileClip(random_song).set_fps(44100)
+            try:
+                magick = get_imagemagick_path()
+                if magick:
+                    change_settings({"IMAGEMAGICK_BINARY": magick})
+                subtitles_path = self.generate_subtitles(self.tts_path)
+                equalize_subtitles(subtitles_path, 10)
+                generator = lambda text: TextClip(
+                    text, font=os.path.join(get_fonts_dir(), get_font()),
+                    fontsize=80, color="#FFFF00", stroke_color="black",
+                    stroke_width=3, size=(1000, None), method="caption",
+                )
+                subtitles = keep(SubtitlesClip(subtitles_path, generator).set_position(("center", "center")))
+                final_clip = keep(CompositeVideoClip([final_clip, subtitles]).set_duration(duration))
+            except Exception:
+                warning("Subtitle rendering failed; this preview will not include captions.")
 
-        # Turn down volume
-        random_song_clip = random_song_clip.fx(afx.volumex, 0.1)
-        comp_audio = CompositeAudioClip([tts_clip.set_fps(44100), random_song_clip])
-
-        final_clip = final_clip.set_audio(comp_audio)
-        final_clip = final_clip.set_duration(tts_clip.duration)
-
-        if subtitles is not None:
-            final_clip = CompositeVideoClip([final_clip, subtitles])
-
-        final_clip.write_videofile(combined_image_path, threads=threads)
-
-        success(f'Wrote Video to "{combined_image_path}"')
-
-        return combined_image_path
+            final_clip.write_videofile(
+                output_path, fps=30, codec="libx264", audio_codec="aac",
+                threads=max(1, int(get_threads())), ffmpeg_params=["-pix_fmt", "yuv420p"],
+            )
+            success(f'Wrote Video to "{output_path}"')
+            return output_path
+        finally:
+            seen = set()
+            for clip in reversed(resources):
+                if id(clip) not in seen:
+                    seen.add(id(clip))
+                    try:
+                        clip.close()
+                    except Exception:
+                        pass
 
     def set_topic(self, topic: str) -> str:
         """
@@ -681,6 +614,10 @@ class YouTube:
         Returns:
             path (str): The path to the generated MP4 File.
         """
+        self.images = []
+        self.image_prompts = []
+        os.makedirs(os.path.join(ROOT_DIR, ".mp"), exist_ok=True)
+
         # Use the custom topic if one was supplied, otherwise generate one
         if topic is not None and topic.strip():
             self.set_topic(topic)
@@ -703,6 +640,9 @@ class YouTube:
         for prompt in self.image_prompts:
             self.generate_image(prompt)
 
+        if not self.images:
+            raise RuntimeError("The image provider returned no images; generation stopped before rendering.")
+
         # Generate the TTS
         self.generate_script_to_speech(tts_instance)
 
@@ -723,10 +663,12 @@ class YouTube:
         Returns:
             channel_id (str): The Channel ID.
         """
-        driver = self.browser
+        driver = self._ensure_browser()
         driver.get("https://studio.youtube.com")
         time.sleep(2)
-        channel_id = driver.current_url.split("/")[-1]
+        if "/channel/" not in driver.current_url:
+            raise RuntimeError("Firefox is not signed into a YouTube Studio channel.")
+        channel_id = driver.current_url.split("/channel/", 1)[1].split("/")[0]
         self.channel_id = channel_id
 
         return channel_id
@@ -823,12 +765,11 @@ class YouTube:
             next_button = driver.find_element(By.ID, YOUTUBE_NEXT_BUTTON_ID)
             next_button.click()
 
-            # Set as unlisted
+            # Fail closed: never select visibility by a positional radio index.
             if verbose:
-                info("\t=> Setting as unlisted...")
+                info("\t=> Setting visibility to private...")
 
-            radio_button = driver.find_elements(By.XPATH, YOUTUBE_RADIO_BUTTON_XPATH)
-            radio_button[2].click()
+            driver.find_element(By.NAME, "PRIVATE").click()
 
             if verbose:
                 info("\t=> Clicking done button...")
@@ -875,13 +816,12 @@ class YouTube:
                 }
             )
 
-            # Close the browser
-            driver.quit()
-
             return True
-        except:
-            self.browser.quit()
+        except Exception as exc:
+            warning(f"YouTube upload failed ({type(exc).__name__}); no cross-post will run.")
             return False
+        finally:
+            self.close_browser()
 
     def get_videos(self) -> List[dict]:
         """
