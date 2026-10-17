@@ -18,6 +18,16 @@ from status import success, warning
 from utils import choose_random_song
 
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+UNSAFE_MONTAGE_CLAIMS = (
+    "cardboard box", " box ", "sleeping", "asleep", "toy", "treat", "eating",
+    "food", "accident", "injury", "sick",
+)
+SAFE_FALLBACK_SCRIPT = (
+    "Meet the Maine Coon behind House of Big Beans. "
+    "Fluffy, curious, and always ready to supervise the room. "
+    "Whether posing on the cat tree or exploring the furniture, "
+    "this little lion knows how to steal the spotlight."
+)
 
 
 class LocalPhotoPreview(PreviewYouTube):
@@ -48,10 +58,14 @@ Language: {self.language}
 """
         completion = str(self.generate_response(prompt))
         completion = re.sub(r"\*", "", completion).strip().strip('"')
-        if not completion:
-            raise RuntimeError("The generated local-photo narration is empty.")
-        if len(completion) > 1200:
-            raise RuntimeError("The generated local-photo narration is too long.")
+        normalized = f" {completion.lower()} "
+        if (
+            not completion
+            or len(completion) > 1200
+            or any(term in normalized for term in UNSAFE_MONTAGE_CLAIMS)
+        ):
+            warning("Generated narration made an unsupported photo claim; using the safe HouseOfBigBeans fallback.")
+            completion = SAFE_FALLBACK_SCRIPT
         self.script = completion
         return completion
 
