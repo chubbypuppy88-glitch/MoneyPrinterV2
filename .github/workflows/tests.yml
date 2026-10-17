@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   unit-tests:
+    if: github.event.head_commit.message != 'Stage isolated preview repair'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -20,24 +21,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install lightweight test dependencies
-        run: python -m pip install requests termcolor srt_equalizer schedule prettytable
+      - name: Install isolated test dependencies
+        run: python -m pip install requests termcolor srt_equalizer schedule prettytable 'moviepy==1.0.3' 'numpy>=1.26,<2' 'Pillow>=10'
       - name: Compile application and tests
         run: python -m compileall -q src scripts tests
       - name: Run unit tests without provider credentials
         run: python -m unittest discover -s tests -v
-      - name: Preserve source snapshot for isolated regression review
+      - name: Render synthetic media with real MoviePy and FFmpeg
+        run: python scripts/smoke_render.py
+      - name: Preserve validation results and source snapshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: regression-source-snapshot
-          retention-days: 1
+          retention-days: 3
           path: |
             src/**/*.py
             src/*.py
             scripts/*.py
             scripts/*.sh
             tests/*.py
+            docs/LocalPreview.md
+            outputs/smoke-render-results.json
             config.example.json
             requirements.txt
             AGENTS.md

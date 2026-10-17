@@ -1,0 +1,59 @@
+name: Apply and validate isolated preview repair
+on:
+  push:
+    branches: ['fix/houseofbigbeans-local-preview']
+    paths: ['.github/repairs/apply_preview.py']
+permissions:
+  contents: write
+concurrency:
+  group: isolated-preview-repair
+  cancel-in-progress: false
+jobs:
+  apply-and-test:
+    if: github.repository == 'chubbypuppy88-glitch/MoneyPrinterV2' && github.ref == 'refs/heads/fix/houseofbigbeans-local-preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply reviewed checksum-guarded source edits
+        run: python .github/repairs/apply_preview.py
+      - name: Install isolated test dependencies
+        run: python -m pip install requests termcolor srt_equalizer schedule prettytable 'moviepy==1.0.3' 'numpy>=1.26,<2' 'Pillow>=10'
+      - name: Compile application and tests
+        run: python -m compileall -q src scripts tests
+      - name: Test provider-independent behavior
+        run: python -m unittest discover -s tests -v 2>&1 | tee repair-unit-results.txt
+      - name: Test real media rendering without credentials
+        run: python scripts/smoke_render.py 2>&1 | tee repair-render-results.txt
+      - name: Commit only tested source changes to the isolated branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/config.py src/classes/YouTube.py src/main.py requirements.txt tests/test_youtube_custom_topic.py
+          git commit -m 'Fix local preview generation, lazy browser startup, and menu safety'
+          gh auth setup-git --hostname github.com
+          git push https://github.com/chubbypuppy88-glitch/MoneyPrinterV2.git HEAD:refs/heads/fix/houseofbigbeans-local-preview
+      - name: Preserve test evidence and repaired source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-repair-validation
+          retention-days: 3
+          path: |
+            repair-unit-results.txt
+            repair-render-results.txt
+            outputs/smoke-render-results.json
+            src/**/*.py
+            src/*.py
+            scripts/*.py
+            tests/*.py
+            requirements.txt
