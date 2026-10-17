@@ -38,6 +38,7 @@ def main(argv=None):
     parser.add_argument("--topic", help="Optional custom video topic")
     parser.add_argument("--model", help="Override the configured Ollama model for this run only")
     parser.add_argument("--music", action="store_true", help="Opt in to local background music; disabled by default")
+    parser.add_argument("--images-dir", help="Use local photos from this private folder and bypass image-generation APIs")
     parser.add_argument("--check-only", action="store_true", help="Check readiness without generating content")
     args = parser.parse_args(argv)
     try:
@@ -48,22 +49,37 @@ def main(argv=None):
         return 1
     if args.model:
         config["ollama_model"] = args.model
-    result = run_checks(config, root=ROOT_DIR, music=args.music)
+    result = run_checks(
+        config,
+        root=ROOT_DIR,
+        music=args.music,
+        require_image_api=not bool(args.images_dir),
+    )
     if result or args.check_only:
         return result
 
-    # Delay all model/provider imports until checks pass.
     try:
-        from classes.PreviewYouTube import PreviewYouTube as YouTube
+        if args.images_dir:
+            from classes.LocalPhotoPreview import LocalPhotoPreview as YouTube
+        else:
+            from classes.PreviewYouTube import PreviewYouTube as YouTube
         from classes.Tts import TTS
         from llm_provider import select_model
 
         select_model(config["ollama_model"])
+        kwargs = {
+            "background_music": args.music,
+        }
+        if args.images_dir:
+            kwargs["images_dir"] = args.images_dir
         youtube = YouTube(
             account["id"], account["nickname"], account.get("firefox_profile", ""),
-            account["niche"], account["language"], background_music=args.music,
+            account["niche"], account["language"], **kwargs,
         )
-        print("[INFO] Generating a local preview only. Provider calls may use your configured API quota.")
+        if args.images_dir:
+            print("[INFO] Generating a local preview from private local photos. No image API will be called.")
+        else:
+            print("[INFO] Generating a local preview only. Provider calls may use your configured API quota.")
         path = Path(youtube.generate_video(TTS(), topic=args.topic)).resolve()
         metadata_path = path.with_suffix(".json")
         metadata_path.write_text(json.dumps({

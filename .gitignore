@@ -9,6 +9,7 @@ venv/
 !.env.example
 Songs/
 outputs/
+local_media/
 .vscode/
 MoneyPrinterV2_Source.zip
 geckodriver.log

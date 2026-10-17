@@ -51,11 +51,10 @@ def request_models(base_url):
     except HTTPError as exc:
         return None, f"HTTP {exc.code}"
     except Exception as exc:
-        # Exception messages may contain credential-bearing URLs. Print only a type.
         return None, type(exc).__name__
 
 
-def run_checks(config, *, root=ROOT_DIR, offline=False, music=False):
+def run_checks(config, *, root=ROOT_DIR, offline=False, music=False, require_image_api=True):
     failures = 0
 
     def report(passed, message, *, optional=False):
@@ -76,8 +75,12 @@ def run_checks(config, *, root=ROOT_DIR, offline=False, music=False):
     except importlib.metadata.PackageNotFoundError:
         report(False, "MoviePy distribution not installed")
 
-    key = config.get("nanobanana2_api_key") or os.environ.get("GEMINI_API_KEY", "")
-    report(isinstance(key, str) and bool(key.strip()), "Image API key configured (value hidden; authentication not tested)")
+    if require_image_api:
+        key = config.get("nanobanana2_api_key") or os.environ.get("GEMINI_API_KEY", "")
+        report(isinstance(key, str) and bool(key.strip()), "Image API key configured (value hidden; authentication not tested)")
+    else:
+        print("[OK] Local-photo preview selected; image API key and quota are not required.")
+
     model = config.get("ollama_model", "")
     report(isinstance(model, str) and bool(model.strip()), "Ollama model configured; set ollama_model or pass --model")
     if offline:
