@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a HouseOfBigBeans Short from local photos and optionally upload it privately."""
+"""Generate a HouseOfBigBeans Short locally and optionally upload it privately."""
 import argparse
 import json
 from pathlib import Path
@@ -27,8 +27,10 @@ def main(argv=None):
     parser.add_argument("--music", action="store_true")
     parser.add_argument(
         "--upload-private", action="store_true",
-        help="Upload the finished Short to YouTube as PRIVATE using the cached Firefox profile.",
+        help="Upload the finished Short through the official YouTube API as PRIVATE.",
     )
+    parser.add_argument("--youtube-client", default="youtube_oauth_client.json")
+    parser.add_argument("--youtube-token", default=".youtube_oauth_token.json")
     args = parser.parse_args(argv)
 
     try:
@@ -64,7 +66,7 @@ def main(argv=None):
             background_music=args.music, images_dir=str(images_dir),
         )
 
-        print("[AUTO] Generating narration, metadata, voice, video, and captions from local photos.")
+        print("[AUTO] Local/free path: Ollama -> KittenTTS -> MoviePy/FFmpeg -> script captions.")
         path = Path(youtube.generate_video(TTS(), topic=args.topic)).resolve()
         metadata_path = path.with_suffix(".json")
         metadata_path.write_text(json.dumps({
@@ -79,14 +81,29 @@ def main(argv=None):
         print(f"[OK] Finished local Short: {path}")
 
         if not args.upload_private:
-            print("[OK] Upload skipped. Re-run with --upload-private when you want a private YouTube upload.")
+            print("[OK] Upload skipped. Add --upload-private after one-time YouTube authorization.")
             return 0
 
-        print("[AUTO] Uploading to YouTube as PRIVATE. No public visibility or cross-posting will be selected.")
-        if not youtube.upload_video():
-            print("[FAIL] Private YouTube upload did not complete. The local MP4 is preserved.")
-            return 1
-        print(f"[OK] Private YouTube upload: {youtube.uploaded_video_url}")
+        from youtube_api import refresh_access_token, upload_private_video
+
+        client_path = (ROOT_DIR / args.youtube_client).resolve()
+        token_path = (ROOT_DIR / args.youtube_token).resolve()
+        if not client_path.is_file() or not token_path.is_file():
+            print("[FAIL] One-time YouTube authorization is not set up yet.")
+            print("[NEXT] Put your TV/Limited Input OAuth client JSON at youtube_oauth_client.json, then run:")
+            print("       .venv/bin/python -u scripts/youtube_device_auth.py")
+            print(f"[SAFE] Your finished MP4 is preserved at: {path}")
+            return 2
+
+        access_token = refresh_access_token(client_path, token_path)
+        print("[AUTO] Uploading with YouTube's official API as PRIVATE.")
+        url = upload_private_video(
+            path,
+            title=youtube.metadata.get("title", "HouseOfBigBeans Short"),
+            description=youtube.metadata.get("description", ""),
+            access_token=access_token,
+        )
+        print(f"[OK] Private YouTube upload: {url}")
         return 0
     except Exception as exc:
         report_failure(exc)

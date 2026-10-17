@@ -2,7 +2,9 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from src.classes.LocalPhotoPreview import LocalPhotoPreview
+# Register lightweight optional-provider stubs before importing the real local class.
+from test_youtube_custom_topic import YouTube  # noqa: F401
+from classes.LocalPhotoPreview import LocalPhotoPreview
 
 
 class LocalPhotoPreviewTests(unittest.TestCase):

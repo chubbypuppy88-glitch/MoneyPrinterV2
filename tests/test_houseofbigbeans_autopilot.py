@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import patch
-from pathlib import Path
 import tempfile
 
-from src.script_captions import build_ass, _caption_chunks
-from src.classes.LocalPhotoPreview import LocalPhotoPreview
+from test_youtube_custom_topic import YouTube  # noqa: F401
+from classes.LocalPhotoPreview import LocalPhotoPreview
+from script_captions import build_ass, _caption_chunks
 
 
 class ScriptCaptionTests(unittest.TestCase):
@@ -36,12 +36,28 @@ class LocalPhotoNarrationTests(unittest.TestCase):
             captured = []
             def fake(prompt):
                 captured.append(prompt)
-                return "Meet the Maine Coon behind House of Big Beans. Fluffy and curious. Always supervising the room. This little lion owns the place."
+                return (
+                    "Meet the Maine Coon behind House of Big Beans. "
+                    "Fluffy and curious. Always supervising the room. "
+                    "This little lion owns the place."
+                )
             preview.generate_response = fake
-            with patch("src.classes.LocalPhotoPreview.get_script_sentence_length", return_value=4):
+            with patch("classes.LocalPhotoPreview.get_script_sentence_length", return_value=4):
                 script = preview.generate_script()
             self.assertIn("House of Big Beans", script)
             self.assertIn("Do not invent a cardboard box", captured[0])
+
+    def test_unsupported_generated_story_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            preview = LocalPhotoPreview(
+                "id", "HouseOfBigBeans", "", "Maine Coon cats", "English",
+                background_music=False, images_dir=tmp,
+            )
+            preview.generate_response = lambda prompt: "The cat sleeps in a cardboard box."
+            with patch("classes.LocalPhotoPreview.get_script_sentence_length", return_value=4):
+                script = preview.generate_script()
+            self.assertNotIn("box", script.lower())
+            self.assertIn("House of Big Beans", script)
 
 
 if __name__ == "__main__":
