@@ -82,7 +82,7 @@ class PreviewChecksTests(unittest.TestCase):
             path = Path(directory) / "preview.mp4"
             youtube.generate_video.return_value = str(path)
             modules = {
-                "classes.YouTube": types.SimpleNamespace(YouTube=factory),
+                "classes.PreviewYouTube": types.SimpleNamespace(PreviewYouTube=factory),
                 "classes.Tts": types.SimpleNamespace(TTS=Mock()),
                 "llm_provider": types.SimpleNamespace(select_model=Mock()),
             }

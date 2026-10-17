@@ -54,7 +54,7 @@ def main(argv=None):
 
     # Delay all model/provider imports until checks pass.
     try:
-        from classes.YouTube import YouTube
+        from classes.PreviewYouTube import PreviewYouTube as YouTube
         from classes.Tts import TTS
         from llm_provider import select_model
 
