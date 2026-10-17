@@ -62,12 +62,13 @@ def _make_youtube() -> YouTube:
     youtube = YouTube.__new__(YouTube)
     youtube._niche = "Personal finance"
     youtube._language = "English"
+    youtube.images = []
     youtube.image_prompts = []
     youtube.generate_topic = Mock(side_effect=lambda: setattr(youtube, "subject", "LLM topic"))
     youtube.generate_script = Mock()
     youtube.generate_metadata = Mock()
-    youtube.generate_prompts = Mock()
-    youtube.generate_image = Mock()
+    youtube.generate_prompts = Mock(side_effect=lambda: setattr(youtube, "image_prompts", ["A cat"]))
+    youtube.generate_image = Mock(side_effect=lambda prompt: youtube.images.append("cat.png"))
     youtube.generate_script_to_speech = Mock()
     youtube.combine = Mock(return_value="video.mp4")
     return youtube
