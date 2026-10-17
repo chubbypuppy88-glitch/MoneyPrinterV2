@@ -9,6 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR / "src"))
 sys.path.insert(0, str(ROOT_DIR / "scripts"))
 from preflight_local import read_config, run_checks
+from preview_diagnostics import report_failure
 
 
 def load_account(account_name, root=ROOT_DIR):
@@ -74,7 +75,7 @@ def main(argv=None):
         print("[OK] Nothing uploaded or scheduled. Review the video and captions before any publishing.")
         return 0
     except Exception as exc:
-        print(f"[FAIL] Preview generation stopped ({type(exc).__name__}). No upload was attempted.")
+        report_failure(exc)
         return 1
 
 
