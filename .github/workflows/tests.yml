@@ -1,0 +1,43 @@
+name: Python regression checks
+
+on:
+  push:
+    branches: [main, 'fix/houseofbigbeans-local-preview']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install lightweight test dependencies
+        run: python -m pip install requests termcolor srt_equalizer schedule prettytable
+      - name: Compile application and tests
+        run: python -m compileall -q src scripts tests
+      - name: Run unit tests without provider credentials
+        run: python -m unittest discover -s tests -v
+      - name: Preserve source snapshot for isolated regression review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-source-snapshot
+          retention-days: 1
+          path: |
+            src/**/*.py
+            src/*.py
+            scripts/*.py
+            scripts/*.sh
+            tests/*.py
+            config.example.json
+            requirements.txt
+            AGENTS.md
