@@ -180,14 +180,12 @@ class YouTube:
         # Apply regex to remove *
         completion = re.sub(r"\*", "", completion)
 
-        if not completion:
-            error("The generated script is empty.")
-            return
+        if not completion.strip():
+            raise RuntimeError("The generated script is empty.")
 
         if len(completion) > 5000:
-            if get_verbose():
-                warning("Generated Script is too long. Retrying...")
-            return self.generate_script()
+            # Do not recursively generate scripts forever on a small CPU model.
+            raise RuntimeError("Generated script exceeds 5000 characters; no automatic retry.")
 
         self.script = completion
 
@@ -204,10 +202,14 @@ class YouTube:
             f"Please generate a YouTube Video Title for the following subject, including hashtags: {self.subject}. Only return the title, nothing else. Limit the title under 100 characters."
         )
 
+        title = " ".join(title.split()).strip('"')
+        if not title:
+            raise RuntimeError("The generated title is empty.")
         if len(title) > 100:
-            if get_verbose():
-                warning("Generated Title is too long. Retrying...")
-            return self.generate_metadata()
+            # Keep the generated title, but avoid unlimited recursive retries.
+            shortened = title[:100].rsplit(" ", 1)[0]
+            title = shortened or title[:100]
+            warning("Generated title shortened to fit 100 characters; review the preview metadata.")
 
         description = self.generate_response(
             f"Please generate a YouTube Video Description for the following script: {self.script}. Only return the description, nothing else."
@@ -628,12 +630,15 @@ class YouTube:
             self.generate_topic()
 
         # Generate the Script
+        print("[STAGE] Writing the video script...", flush=True)
         self.generate_script()
 
         # Generate the Metadata
+        print("[STAGE] Writing the title and description...", flush=True)
         self.generate_metadata()
 
         # Generate the Image Prompts
+        print("[STAGE] Writing image prompts...", flush=True)
         self.generate_prompts()
 
         # Generate the Images
