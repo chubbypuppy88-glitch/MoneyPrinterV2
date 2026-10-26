@@ -5,10 +5,6 @@ import re
 
 import numpy as np
 from PIL import Image, ImageOps
-from moviepy.editor import (
-    AudioFileClip, ImageClip, concatenate_videoclips,
-    CompositeAudioClip, afx,
-)
 
 from .PreviewYouTube import PreviewYouTube
 from config import get_script_sentence_length, get_threads
@@ -96,6 +92,11 @@ Language: {self.language}
 
     def combine(self) -> str:
         """Render local photos, narration, optional music, then burn script-aligned captions."""
+        # Keep MoviePy optional until the legacy local-photo renderer is actually invoked.
+        from moviepy.editor import (
+            AudioFileClip, ImageClip, concatenate_videoclips,
+            CompositeAudioClip, afx,
+        )
         if not self.images:
             raise RuntimeError("No local images are available for rendering.")
 
