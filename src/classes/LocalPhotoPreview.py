@@ -48,7 +48,7 @@ Mention House of Big Beans naturally no more than once.
 Keep the whole narration suitable for roughly 12 to 18 seconds.
 Return only the raw narration with no title, labels, markdown, or quotation marks.
 
-Subject: {self.subject}
+Subject: {subject}
 Language: {self.language}
 """
         completion = str(self.generate_response(prompt))
