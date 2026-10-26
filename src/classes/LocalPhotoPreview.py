@@ -34,7 +34,7 @@ class LocalPhotoPreview(PreviewYouTube):
         self._local_images: list[str] = []
 
     def generate_script(self) -> str:
-        sentence_length = max(3, min(5, int(get_script_sentence_length())))
+        sentence_length = max(3, min(5, int(get_script_sentence_length())))\n        subject = getattr(self, "subject", self.niche)
         prompt = f"""
 Write exactly {sentence_length} short sentences for a YouTube Short voiceover about
 the Maine Coon featured in a montage of real household photos on the HouseOfBigBeans channel.
