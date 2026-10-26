@@ -58,12 +58,10 @@ jobs:
 
       - name: Generate four fresh AI scenes and upload today's Short
         env:
-          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           YOUTUBE_CLIENT_FILE: youtube_oauth_client.json
           YOUTUBE_TOKEN_FILE: .youtube_oauth_token.json
           YOUTUBE_PRIVACY_STATUS: ${{ vars.YOUTUBE_PRIVACY_STATUS }}
         run: |
-          test -n "$POLLINATIONS_API_KEY" || { echo "Missing POLLINATIONS_API_KEY secret"; exit 2; }
           DATE="${{ inputs.date }}"
           [ -n "$DATE" ] || DATE="$(date -u +%F)"
           PRIVACY="${{ inputs.privacy }}"
