@@ -34,7 +34,8 @@ class LocalPhotoPreview(PreviewYouTube):
         self._local_images: list[str] = []
 
     def generate_script(self) -> str:
-        sentence_length = max(3, min(5, int(get_script_sentence_length())))\n        subject = getattr(self, "subject", self.niche)
+        sentence_length = max(3, min(5, int(get_script_sentence_length())))
+        subject = getattr(self, "subject", self.niche)
         prompt = f"""
 Write exactly {sentence_length} short sentences for a YouTube Short voiceover about
 the Maine Coon featured in a montage of real household photos on the HouseOfBigBeans channel.
@@ -91,7 +92,6 @@ Language: {self.language}
 
     def combine(self) -> str:
         """Render local photos, narration, optional music, then burn script-aligned captions."""
-        # Keep MoviePy optional until the legacy local-photo renderer is actually invoked.
         from moviepy.editor import (
             AudioFileClip, ImageClip, concatenate_videoclips,
             CompositeAudioClip, afx,
