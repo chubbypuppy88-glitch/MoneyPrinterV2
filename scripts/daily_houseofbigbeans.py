@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -8,12 +9,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import urllib.parse
 import requests
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
-POLLINATIONS_IMAGE_URL = "https://gen.pollinations.ai/image/"
+OPENMIND_IMAGE_URL = "https://openmind.theeverythingai.com/v1/images/generations"
 
 TOPICS = [
 ("Why Maine Coons chirp instead of meow","That tiny chirp is one of the funniest Maine Coon sounds. They often use trills and chirps to get attention or react to something interesting. Their huge body makes the tiny sound even more ridiculous. House of Big Beans approves this extremely serious communication style."),
@@ -62,14 +62,31 @@ def scene_prompts(topic,narration):
     return ["Photorealistic vertical 9:16 social-media image of the SAME silver Maine Coon cat in every scene: very large fluffy silver tabby Maine Coon, tufted ears, amber-gold eyes, enormous plume tail, realistic anatomy, cozy modern home, no people. "+anchors[i]+f". Video topic: {topic}. Scene idea: {sentences[min(i,len(sentences)-1)]}. No text, captions, logos, watermark, extra limbs, duplicate cat, or distorted paws." for i in range(4)]
 
 def generate_image(prompt,destination,*,api_key,model,seed):
-    if not api_key: raise RuntimeError("POLLINATIONS_API_KEY is required for AI image generation.")
-    url=POLLINATIONS_IMAGE_URL+urllib.parse.quote(prompt,safe="")
-    response=requests.get(url,params={"model":model,"width":720,"height":1280,"seed":seed},headers={"Authorization":f"Bearer {api_key}"},timeout=240)
+    headers={"Content-Type":"application/json"}
+    if api_key:
+        headers["Authorization"]=f"Bearer {api_key}"
+    response=requests.post(
+        OPENMIND_IMAGE_URL,
+        headers=headers,
+        json={"model":model,"prompt":prompt,"size":"720x1280","response_format":"url","seed":seed},
+        timeout=240,
+    )
     response.raise_for_status()
-    ctype=response.headers.get("Content-Type","")
-    if not ctype.startswith("image/"): raise RuntimeError(f"AI image service returned unexpected content type: {ctype}")
-    destination.write_bytes(response.content)
-    with Image.open(destination) as image: image.verify()
+    body=response.json()
+    data=body.get("data") if isinstance(body,dict) else None
+    if not isinstance(data,list) or not data:
+        raise RuntimeError("Free AI image service returned no image.")
+    item=data[0] if isinstance(data[0],dict) else {}
+    if item.get("b64_json"):
+        destination.write_bytes(base64.b64decode(item["b64_json"]))
+    elif item.get("url"):
+        image_response=requests.get(item["url"],timeout=240)
+        image_response.raise_for_status()
+        destination.write_bytes(image_response.content)
+    else:
+        raise RuntimeError("Free AI image service returned no downloadable image.")
+    with Image.open(destination) as image:
+        image.verify()
 
 def create_smoke_images(directory,seed):
     paths=[]
@@ -145,8 +162,8 @@ def run(for_date,outdir,*,api_key,model,smoke=False):
     (outdir/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n",encoding="utf-8"); return manifest
 
 def main(argv=None):
-    p=argparse.ArgumentParser(); p.add_argument("--date",default=dt.date.today().isoformat()); p.add_argument("--outdir",default="outputs/daily"); p.add_argument("--image-model",default=os.getenv("POLLINATIONS_IMAGE_MODEL","flux")); p.add_argument("--smoke",action="store_true"); p.add_argument("--upload",action="store_true"); p.add_argument("--privacy",choices=["private","unlisted","public"],default=os.getenv("YOUTUBE_PRIVACY_STATUS","public")); args=p.parse_args(argv)
-    date=dt.date.fromisoformat(args.date); manifest=run(date,Path(args.outdir),api_key=os.getenv("POLLINATIONS_API_KEY",""),model=args.image_model,smoke=args.smoke); print(json.dumps(manifest,indent=2))
+    p=argparse.ArgumentParser(); p.add_argument("--date",default=dt.date.today().isoformat()); p.add_argument("--outdir",default="outputs/daily"); p.add_argument("--image-model",default=os.getenv("OPENMIND_IMAGE_MODEL","pollinations/flux")); p.add_argument("--smoke",action="store_true"); p.add_argument("--upload",action="store_true"); p.add_argument("--privacy",choices=["private","unlisted","public"],default=os.getenv("YOUTUBE_PRIVACY_STATUS","public")); args=p.parse_args(argv)
+    date=dt.date.fromisoformat(args.date); manifest=run(date,Path(args.outdir),api_key=os.getenv("OPENMIND_API_KEY",""),model=args.image_model,smoke=args.smoke); print(json.dumps(manifest,indent=2))
     if args.upload:
         sys.path.insert(0,str(ROOT/"src")); from youtube_api import refresh_access_token,upload_video
         client=Path(os.getenv("YOUTUBE_CLIENT_FILE","youtube_oauth_client.json")); token=Path(os.getenv("YOUTUBE_TOKEN_FILE",".youtube_oauth_token.json")); access=refresh_access_token(client,token)
