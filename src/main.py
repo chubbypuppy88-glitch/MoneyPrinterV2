@@ -175,7 +175,6 @@ def main():
                 )
 
                 while True:
-                    rem_temp_files()
                     info("\n============ OPTIONS ============", False)
 
                     for idx, youtube_option in enumerate(YOUTUBE_OPTIONS):
@@ -184,11 +183,14 @@ def main():
                     info("=================================\n", False)
 
                     # Get user input
-                    user_input = int(question("Select an option: "))
-                    tts = TTS()
+                    try:
+                        user_input = int(question("Select an option: ").strip())
+                    except ValueError:
+                        warning("Please enter a menu number, not a terminal command.")
+                        continue
 
                     if user_input == 1:
-                        generate_and_upload_short(youtube, tts)
+                        generate_and_upload_short(youtube, TTS())
                     elif user_input == 2:
                         custom_topic = question(" => Enter the topic / video idea for this Short: ").strip()
 
@@ -196,7 +198,7 @@ def main():
                             warning("No topic entered. Returning to the menu.")
                             continue
 
-                        generate_and_upload_short(youtube, tts, topic=custom_topic)
+                        generate_and_upload_short(youtube, TTS(), topic=custom_topic)
                     elif user_input == 3:
                         videos = youtube.get_videos()
 

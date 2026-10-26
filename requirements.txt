@@ -9,7 +9,9 @@ webdriver_manager
 selenium_firefox
 selenium
 ollama
-moviepy
+# The application uses MoviePy 1.x APIs; v2 removes moviepy.editor.
+moviepy==1.0.3
+numpy>=1.26,<2
 Pillow>=10.0.0
 yagmail
 assemblyai

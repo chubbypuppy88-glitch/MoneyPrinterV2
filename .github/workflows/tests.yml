@@ -1,0 +1,73 @@
+name: Python regression checks
+
+on:
+  push:
+    branches: [main, 'fix/houseofbigbeans-local-preview']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install media verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
+          ffprobe -version
+          espeak-ng --version
+      - name: Install isolated test dependencies
+        run: python -m pip install httpx requests termcolor srt_equalizer schedule prettytable 'moviepy==1.0.3' 'numpy>=1.26,<2' 'Pillow>=10'
+      - name: Compile application and tests
+        run: python -m compileall -q src scripts tests
+      - name: Run unit tests without provider credentials
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee unit-results.txt
+      - name: Render legacy synthetic media with real MoviePy and FFmpeg
+        run: |
+          set -o pipefail
+          python scripts/smoke_render.py 2>&1 | tee render-results.txt
+      - name: Render exact daily automation path
+        run: |
+          set -o pipefail
+          rm -rf outputs/daily-smoke
+          python scripts/daily_houseofbigbeans.py --smoke --date 2026-10-25 --outdir outputs/daily-smoke 2>&1 | tee daily-render-results.txt
+          test -s outputs/daily-smoke/HouseOfBigBeans-daily.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of json outputs/daily-smoke/HouseOfBigBeans-daily.mp4 | tee daily-ffprobe.json
+          python -c 'import json, pathlib; data=json.loads(pathlib.Path("daily-ffprobe.json").read_text()); s=data["streams"][0]; assert s["codec_name"]=="h264", s; assert s["width"]==1080, s; assert s["height"]==1920, s; print("daily renderer verified: H.264 1080x1920")'
+      - name: Preserve validation results and source snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-source-snapshot
+          retention-days: 3
+          path: |
+            unit-results.txt
+            render-results.txt
+            daily-render-results.txt
+            daily-ffprobe.json
+            src/**/*.py
+            src/*.py
+            scripts/*.py
+            scripts/*.sh
+            tests/*.py
+            docs/*.md
+            outputs/smoke-render-results.json
+            outputs/daily-smoke/manifest.json
+            config.example.json
+            requirements.txt
+            AGENTS.md
