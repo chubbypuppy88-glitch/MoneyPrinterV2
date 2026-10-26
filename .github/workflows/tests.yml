@@ -48,16 +48,7 @@ jobs:
           python scripts/daily_houseofbigbeans.py --smoke --date 2026-10-25 --outdir outputs/daily-smoke 2>&1 | tee daily-render-results.txt
           test -s outputs/daily-smoke/HouseOfBigBeans-daily.mp4
           ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of json outputs/daily-smoke/HouseOfBigBeans-daily.mp4 | tee daily-ffprobe.json
-          python - <<'PY'
-import json
-from pathlib import Path
-data=json.loads(Path("daily-ffprobe.json").read_text())
-stream=data["streams"][0]
-assert stream["codec_name"]=="h264", stream
-assert stream["width"]==1080, stream
-assert stream["height"]==1920, stream
-print("daily renderer verified: H.264 1080x1920")
-PY
+          python -c 'import json, pathlib; data=json.loads(pathlib.Path("daily-ffprobe.json").read_text()); s=data["streams"][0]; assert s["codec_name"]=="h264", s; assert s["width"]==1080, s; assert s["height"]==1920, s; print("daily renderer verified: H.264 1080x1920")'
       - name: Preserve validation results and source snapshot
         if: always()
         uses: actions/upload-artifact@v4
