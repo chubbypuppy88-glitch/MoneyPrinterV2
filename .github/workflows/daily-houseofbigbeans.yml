@@ -3,6 +3,10 @@ name: Daily HouseOfBigBeans Short
 on:
   schedule:
     - cron: '0 15 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/houseofbigbeans-trigger'
   workflow_dispatch:
     inputs:
       date:
@@ -65,6 +69,9 @@ jobs:
           DATE="${{ inputs.date }}"
           [ -n "$DATE" ] || DATE="$(date -u +%F)"
           PRIVACY="${{ inputs.privacy }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            PRIVACY="private"
+          fi
           [ -n "$PRIVACY" ] || PRIVACY="${YOUTUBE_PRIVACY_STATUS:-public}"
           python scripts/daily_houseofbigbeans.py --date "$DATE" --outdir outputs/daily --upload --privacy "$PRIVACY"
 
