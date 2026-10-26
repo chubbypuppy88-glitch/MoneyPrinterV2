@@ -7,8 +7,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from .PreviewYouTube import PreviewYouTube
-from config import get_script_sentence_length, get_threads
-from constants import ROOT_DIR
+from config import ROOT_DIR, get_script_sentence_length, get_threads
 from script_captions import burn_script_captions
 from status import success, warning
 from utils import choose_random_song
